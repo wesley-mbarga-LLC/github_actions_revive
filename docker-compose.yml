@@ -1,0 +1,185 @@
+version: '2.3'
+
+services:
+  ui:
+    ports:
+      - 9971:8080
+    environment:
+      - "JAVA_OPTS=-XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/urandom"
+      - SERVER_TOMCAT_ACCESSLOG_ENABLED=true
+      - ENDPOINTS_CATALOG=http://catalog:8080
+      - ENDPOINTS_CARTS=http://carts:8080
+      - ENDPOINTS_ORDERS=http://orders:8080
+      - ENDPOINTS_CHECKOUT=http://checkout:8080
+      - ENDPOINTS_ASSETS=http://assets:8080
+    hostname: ui
+    image: devopseasylearning/revive-ui:01
+    restart: always
+    mem_limit: 512m
+    cap_drop:
+      - ALL
+    networks:
+      - wesley
+    depends_on:
+      - catalog
+      - carts
+      - orders
+      - checkout
+      - assets
+
+  catalog:
+    hostname: catalog
+    ports:
+      - "8081:8080"
+    image: devopseasylearning/revive-catalog:01
+    restart: always
+    environment:
+      - DB_ENDPOINT=catalog-db:3306
+      - DB_NAME=sampledb
+      - DB_USER=catalog_user
+      - GIN_MODE=release
+      - DB_MIGRATE=true
+      - DB_CONNECT_TIMEOUT=5
+      - PORT=8080
+      - DB_PASSWORD=testing
+    mem_limit: 128m
+    cap_drop:
+      - ALL
+    networks:
+      - wesley
+    depends_on:
+      - catalog-db
+
+  catalog-db:
+    image: mariadb:10.9
+    hostname: catalog-db
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=testing
+      - MYSQL_ALLOW_EMPTY_PASSWORD=true
+      - MYSQL_DATABASE=sampledb
+      - MYSQL_USER=catalog_user
+      - MYSQL_PASSWORD=testing
+    mem_limit: 128m
+    networks:
+      - wesley
+
+  carts:
+    hostname: carts
+    image: devopseasylearning/revive-cart:01
+    restart: always
+    environment:
+      - JAVA_OPTS=-XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/urandom
+      - SERVER_TOMCAT_ACCESSLOG_ENABLED=true
+      - SPRING_PROFILES_ACTIVE=dynamodb
+      - CARTS_DYNAMODB_ENDPOINT=http://carts-db:8000
+      - CARTS_DYNAMODB_CREATETABLE=true
+      - AWS_ACCESS_KEY_ID=key
+      - AWS_SECRET_ACCESS_KEY=dummy
+    mem_limit: 256m
+    cap_drop:
+      - ALL
+    networks:
+      - wesley
+    depends_on:
+      - carts-db
+
+  carts-db:
+    image: amazon/dynamodb-local:1.20.0
+    hostname: carts-db
+    restart: always
+    mem_limit: 256m
+    networks:
+      - wesley
+
+  orders:
+    hostname: orders
+    image: devopseasylearning/revive-orders:01
+    restart: always
+    environment:
+      - JAVA_OPTS=-XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/urandom
+      - SERVER_TOMCAT_ACCESSLOG_ENABLED=true
+      - SPRING_PROFILES_ACTIVE=rabbitmq
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://orders-db:5432/orders
+      - SPRING_DATASOURCE_USERNAME=orders_user
+      - SPRING_DATASOURCE_PASSWORD=testing
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    mem_limit: 512m
+    cap_drop:
+      - ALL
+    networks:
+      - wesley
+    depends_on:
+      - rabbitmq
+      - orders-db
+      - checkout
+
+  orders-db:
+    image: postgres:16.1
+    hostname: orders-db
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - reschedule=on-node-failure
+      - POSTGRES_PASSWORD=testing
+      - POSTGRES_DB=orders
+      - POSTGRES_USER=orders_user
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d orders -U orders_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    mem_limit: 128m
+    networks:
+      - wesley
+
+  checkout:
+    image: devopseasylearning/revive-checkout:01
+    hostname: checkout
+    restart: always
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid
+    environment:
+      - REDIS_URL=redis://checkout-redis:6379
+      - ENDPOINTS_ORDERS=http://orders:8080
+    mem_limit: 256m
+    cap_drop:
+      - ALL
+    networks:
+      - wesley
+    depends_on:
+      - checkout-redis
+
+  checkout-redis:
+    image: redis:6-alpine
+    hostname: checkout-redis
+    restart: always
+    mem_limit: 128m
+    networks:
+      - wesley
+
+  assets:
+    hostname: assets
+    environment:
+      - PORT=8080
+    image: devopseasylearning/revive-assets:01
+    restart: always
+    mem_limit: 64m
+    cap_drop:
+      - ALL
+    networks:
+      - wesley
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5991:5672"
+      - "15991:15672"
+    networks:
+      - wesley
+
+networks:
+  wesley:
+    driver: bridge
