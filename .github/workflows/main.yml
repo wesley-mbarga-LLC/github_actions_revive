@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  COMPOSE_FILE_CI: docker-compose.ci.yml
+  COMPOSE_FILE_CI: docker-compose.yml
 
 jobs:
   build:
@@ -25,10 +25,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate compose
+      - name: Validate docker-compose file
         run: docker compose -f "$COMPOSE_FILE_CI" config
 
-      - name: Pre-pull images
+      - name: Pre-pull service images
         run: docker compose -f "$COMPOSE_FILE_CI" pull --ignore-pull-failures
 
   test:
@@ -42,24 +42,26 @@ jobs:
       - name: Start stack
         run: docker compose -f "$COMPOSE_FILE_CI" up -d
 
-      - name: Show running containers
+      - name: List running containers
         run: docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 
-      - name: Smoke checks (UI & Catalog)
+      - name: Smoke tests (UI & Catalog endpoints)
         shell: bash
         run: |
           set -e
-          attempt() { n=$1; shift; for i in $(seq 1 "$n"); do if "$@"; then echo "OK"; return 0; fi; echo "retry $i/$n"; sleep 5; done; return 1; }
+          attempt() { n=$1; shift; for i in $(seq 1 "$n"); do if "$@"; then echo "✅ Success"; return 0; fi; echo "⏳ retry $i/$n"; sleep 5; done; return 1; }
           attempt 30 bash -lc 'curl -fsS http://localhost:9971/ >/dev/null'
           attempt 30 bash -lc 'curl -fsS http://localhost:8081/ >/dev/null'
+          echo "--- UI (first lines) ---"
           curl -s http://localhost:9971/ | head -n 5 || true
+          echo "--- Catalog (first lines) ---"
           curl -s http://localhost:8081/ | head -n 5 || true
 
-      - name: Dump logs on failure
+      - name: Dump container logs on failure
         if: failure()
         run: docker compose -f "$COMPOSE_FILE_CI" logs --no-color
 
-      - name: Teardown
+      - name: Teardown stack
         if: always()
         run: docker compose -f "$COMPOSE_FILE_CI" down -v
 
@@ -75,8 +77,8 @@ jobs:
       - name: Pull latest images
         run: docker compose -f "$COMPOSE_FILE_CI" pull --ignore-pull-failures
 
-      - name: Deploy stack (up -d)
+      - name: Deploy stack
         run: docker compose -f "$COMPOSE_FILE_CI" up -d
 
-      - name: Show running containers
+      - name: Show deployed containers
         run: docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
