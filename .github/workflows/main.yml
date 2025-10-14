@@ -27,8 +27,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Create docker-compose file
+        shell: bash
         run: |
-          cat > $COMPOSE_FILE_CI <<'YAML'
+          cat > "$COMPOSE_FILE_CI" <<'YAML'
           version: '2.3'
 
           services:
@@ -172,9 +173,7 @@ jobs:
 
             rabbitmq:
               image: rabbitmq:3-management
-              ports:
-                - "5991:5672"
-                - "15991:15672"
+              ports: [ "5991:5672", "15991:15672" ]
               networks: [ wesley ]
 
           networks:
@@ -183,10 +182,10 @@ jobs:
           YAML
 
       - name: Validate compose
-        run: docker compose -f $COMPOSE_FILE_CI config
+        run: docker compose -f "$COMPOSE_FILE_CI" config
 
       - name: Pre-pull images
-        run: docker compose -f $COMPOSE_FILE_CI pull --ignore-pull-failures
+        run: docker compose -f "$COMPOSE_FILE_CI" pull --ignore-pull-failures
 
   test:
     name: Test (spin & smoke)
@@ -198,9 +197,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Create docker-compose file
-        run: cat > $COMPOSE_FILE_CI <<'YAML'
-          # (same content as in the build job)
-          # To keep this file self-contained across jobs, we recreate it here.
+        shell: bash
+        run: |
+          cat > "$COMPOSE_FILE_CI" <<'YAML'
+          # same content as build job (duplicated so each job is self-contained)
           version: '2.3'
           services:
             ui:
@@ -341,7 +341,7 @@ jobs:
           YAML
 
       - name: Start stack
-        run: docker compose -f $COMPOSE_FILE_CI up -d
+        run: docker compose -f "$COMPOSE_FILE_CI" up -d
 
       - name: Show running containers
         run: docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
@@ -350,21 +350,19 @@ jobs:
         shell: bash
         run: |
           set -e
-          attempt() { n=$1; shift; for i in $(seq 1 "$n"); do if "$@"; then echo "✅ OK"; return 0; fi; echo "⏳ retry $i/$n"; sleep 5; done; return 1; }
+          attempt() { n=$1; shift; for i in $(seq 1 "$n"); do if "$@"; then echo "OK"; return 0; fi; echo "retry $i/$n"; sleep 5; done; return 1; }
           attempt 30 bash -lc 'curl -fsS http://localhost:9971/ >/dev/null'
           attempt 30 bash -lc 'curl -fsS http://localhost:8081/ >/dev/null'
-          echo "UI:"
           curl -s http://localhost:9971/ | head -n 5 || true
-          echo "Catalog:"
           curl -s http://localhost:8081/ | head -n 5 || true
 
       - name: Dump logs on failure
         if: failure()
-        run: docker compose -f $COMPOSE_FILE_CI logs --no-color
+        run: docker compose -f "$COMPOSE_FILE_CI" logs --no-color
 
       - name: Teardown
         if: always()
-        run: docker compose -f $COMPOSE_FILE_CI down -v
+        run: docker compose -f "$COMPOSE_FILE_CI" down -v
 
   deploy:
     name: Deploy (compose up -d)
@@ -377,8 +375,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Create docker-compose file
-        run: cat > $COMPOSE_FILE_CI <<'YAML'
-          # Same compose content; keep prod overrides here if needed.
+        shell: bash
+        run: |
+          cat > "$COMPOSE_FILE_CI" <<'YAML'
+          # same content as build job
           version: '2.3'
           services:
             ui:
@@ -519,10 +519,10 @@ jobs:
           YAML
 
       - name: Pull latest images
-        run: docker compose -f $COMPOSE_FILE_CI pull --ignore-pull-failures
+        run: docker compose -f "$COMPOSE_FILE_CI" pull --ignore-pull-failures
 
       - name: Deploy stack (up -d)
-        run: docker compose -f $COMPOSE_FILE_CI up -d
+        run: docker compose -f "$COMPOSE_FILE_CI" up -d
 
       - name: Show running containers
         run: docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
