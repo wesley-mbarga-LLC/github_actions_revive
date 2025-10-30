@@ -22,7 +22,7 @@ jobs:
     name: Build (validate & pull)
     runs-on:
       group: Wesley-group-runner
-      labels: [build]   # ✅ org runner group + specific runner label
+      labels: [build]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
     needs: build
     runs-on:
       group: Wesley-group-runner
-      labels: [test]    # ✅ run on your 'test' runner
+      labels: [test]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,7 +85,6 @@ jobs:
             return 1
           }
 
-          # Adjust these URLs/ports to match your compose mappings as needed
           wait_http_any "http://localhost:9971/" "UI"
           wait_http_any "http://localhost:8081/" "Catalog"
 
@@ -108,7 +107,7 @@ jobs:
     if: github.ref == 'refs/heads/master'
     runs-on:
       group: Wesley-group-runner
-      labels: [deploy]  # ✅ run on your 'deploy' runner
+      labels: [deploy]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -134,22 +133,28 @@ jobs:
       - name: Show deployed containers
         run: $DOCKER_CMD ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 
-      - name: Show public IP and mapped ports
+      # 🌐 Get External IP & Ports for browser access
+      - name: Get External IP and Port Info
         shell: bash
         run: |
-          echo "🌐 Public IP (best-effort): $(curl -s http://ifconfig.me || echo 'unknown')"
-          echo "📦 Port mappings:"
+          echo "🌍 Retrieving external IP address..."
+          EXT_IP=$(curl -s http://ifconfig.me || echo "Unavailable")
+          echo "🌐 External IP: $EXT_IP"
+          echo ""
+          echo "📦 Container port mappings:"
           $DOCKER_CMD ps --format 'table {{.Names}}\t{{.Ports}}'
+          echo ""
+          echo "💡 Access your app at: http://$EXT_IP:<EXPOSED_PORT>"
+          echo "Replace <EXPOSED_PORT> with the port mapped to your service (see above)."
 
-      # ⏳ Keep the app up for 5 minutes so you can verify it in a browser
+      # ⏳ Keep the app up for 5 minutes for manual browser testing
       - name: Keep stack up for 5 minutes (manual check window)
         shell: bash
         run: |
-          echo "🔎 Verify the app via the public IP above and the exposed ports."
-          echo "⌛ Waiting 5 minutes before shutdown..."
+          echo "🕒 Application running for 5 minutes... verify via browser."
           sleep 300
 
-      # ⛔ Bring the stack down after the window
+      # ⛔ Bring down the stack
       - name: Bring stack down
         if: always()
         run: $DOCKER_CMD compose -f "$COMPOSE_FILE_CI" down -v
