@@ -65,7 +65,6 @@ jobs:
           wait_http_any() {
             local url="$1" name="$2" tries="${3:-30}"
             for i in $(seq 1 "$tries"); do
-              # Return just the HTTP code; 000 means we couldn't connect
               code="$(curl -sS -o /dev/null -m 5 -w '%{http_code}' "$url" || echo 000)"
               if [[ "$code" != "000" ]]; then
                 echo "✅ $name is reachable at $url (HTTP $code)"
@@ -81,7 +80,7 @@ jobs:
           # UI (mapped to localhost:9971)
           wait_http_any "http://localhost:9971/" "UI"
 
-          # Catalog (mapped to localhost:8081) — some services 404 on "/", that's fine.
+          # Catalog (mapped to localhost:8081)
           wait_http_any "http://localhost:8081/" "Catalog"
 
           echo "--- UI sample ---"
@@ -126,3 +125,17 @@ jobs:
 
       - name: Show deployed containers
         run: $DOCKER_CMD ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+
+      # ⏳ Keep the app up for 5 minutes so you can verify it in a browser
+      - name: Keep stack up for 5 minutes (manual check window)
+        shell: bash
+        run: |
+          echo "🔎 You can now open the app using this runner's public IP and the exposed ports below."
+          $DOCKER_CMD ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+          echo "⌛ Waiting 5 minutes before shutdown..."
+          sleep 300
+
+      # ⛔ Bring the stack down after the window
+      - name: Bring stack down
+        if: always()
+        run: $DOCKER_CMD compose -f "$COMPOSE_FILE_CI" down -v
