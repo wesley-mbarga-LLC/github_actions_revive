@@ -20,7 +20,9 @@ env:
 jobs:
   build:
     name: Build (validate & pull)
-    runs-on: repo-build
+    runs-on:
+      group: Wesley-group-runner
+      labels: [build]   # ✅ org runner group + specific runner label
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,10 +33,17 @@ jobs:
       - name: Pre-pull service images
         run: docker compose -f "$COMPOSE_FILE_CI" pull --ignore-pull-failures
 
+      - name: Show runner info
+        run: |
+          echo "Runner: ${{ runner.name }}"
+          echo "Labels: ${{ runner.labels }}"
+
   test:
     name: Test (spin & smoke)
-    runs-on: linux
     needs: build
+    runs-on:
+      group: Wesley-group-runner
+      labels: [test]    # ✅ run on your 'test' runner
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,7 +70,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
           wait_http_any() {
             local url="$1" name="$2" tries="${3:-30}"
             for i in $(seq 1 "$tries"); do
@@ -77,10 +85,8 @@ jobs:
             return 1
           }
 
-          # UI (mapped to localhost:9971)
+          # Adjust these URLs/ports to match your compose mappings as needed
           wait_http_any "http://localhost:9971/" "UI"
-
-          # Catalog (mapped to localhost:8081)
           wait_http_any "http://localhost:8081/" "Catalog"
 
           echo "--- UI sample ---"
@@ -97,10 +103,12 @@ jobs:
         run: $DOCKER_CMD compose -f "$COMPOSE_FILE_CI" down -v
 
   deploy:
-    name: Deploy (compose up -d)
-    runs-on: repo-deploy
+    name: Deploy (compose up -d, 5-min view, then down)
     needs: test
     if: github.ref == 'refs/heads/master'
+    runs-on:
+      group: Wesley-group-runner
+      labels: [deploy]  # ✅ run on your 'deploy' runner
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -126,12 +134,18 @@ jobs:
       - name: Show deployed containers
         run: $DOCKER_CMD ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 
+      - name: Show public IP and mapped ports
+        shell: bash
+        run: |
+          echo "🌐 Public IP (best-effort): $(curl -s http://ifconfig.me || echo 'unknown')"
+          echo "📦 Port mappings:"
+          $DOCKER_CMD ps --format 'table {{.Names}}\t{{.Ports}}'
+
       # ⏳ Keep the app up for 5 minutes so you can verify it in a browser
       - name: Keep stack up for 5 minutes (manual check window)
         shell: bash
         run: |
-          echo "🔎 You can now open the app using this runner's public IP and the exposed ports below."
-          $DOCKER_CMD ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+          echo "🔎 Verify the app via the public IP above and the exposed ports."
           echo "⌛ Waiting 5 minutes before shutdown..."
           sleep 300
 
